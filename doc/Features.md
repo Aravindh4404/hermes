@@ -45,17 +45,19 @@ Hermes provides broad support for ECMAScript features, including:
         *   `Promise.withResolvers` (ES2024)
         *   `Promise.try` (ES2025)
     *   `Symbol.prototype.description` (ES2019 - see "Known Deviations")
-    *   `WeakRef` (ES2021 - see "Planned Features" regarding `FinalizationRegistry`)
+    *   `WeakRef` and `FinalizationRegistry` (ES2021)
     *   [`Intl` API](IntlAPIs.md) (Basic `DateTimeFormat`, `NumberFormat` support; see "Planned Features")
+    *   **Iterator Helpers** (ES2025): `Iterator.from()`, `Iterator.concat()`, and all iterator prototype methods (`drop`, `every`, `filter`, `find`, `flatMap`, `forEach`, `map`, `reduce`, `some`, `take`, `toArray`). Implemented as an internal bytecode polyfill.
+    *   **`Math.sumPrecise()`** (ES2026): Compensated summation over an iterable of numbers, returning an exact double result.
+    *   **`Float16Array`** and **`Math.f16round()`** (ES2024): 16-bit floating-point typed array and rounding helper.
     *   _Note: Support for the latest standard library features may lag behind language feature support._
 
 ### Planned Features
 
 Features Hermes intends to support in the future. Active development or implementation hasn't started or completed yet.
 
-*   **`FinalizationRegistry`:** The complementary API to `WeakRef`.
 *   **Expanded `Intl` Functionality:** Support for APIs such as `DisplayNames`, `ListFormat`, `PluralRules`, `RelativeTimeFormat`, `Locale`, etc.
-*   **Other Standard Library Features:** Newer library additions (e.g., Iterator Helpers, Array Grouping methods) are considered but may be lower priority.
+*   **Other Standard Library Features:** Newer library additions (e.g., Array Grouping methods) are considered but may be lower priority.
 
 ### Intentionally Excluded / De-prioritized Features
 
@@ -82,7 +84,7 @@ Specific behaviors where Hermes differs from the ECMAScript specification or has
 
 *   **`Function.prototype.toString()`:** Due to AOT compilation to bytecode, this method does not return the original JavaScript source code. It typically returns a placeholder like `"[native code]"` or `"[bytecode]"`.
 
-*   **`Promise` Implementation:** Promises are implemented using an internally bundled polyfill compiled to bytecode rather than as a native intrinsic. The polyfill covers the full ES2025 surface (`then`, `catch`, `finally`, `all`, `allSettled`, `any`, `race`, `resolve`, `reject`, `try`, `withResolvers`, `Symbol.toStringTag`), but the following corners differ from the spec:
+*   **`Promise` Implementation:** Promises are implemented using an internally bundled polyfill compiled to bytecode rather than as a native intrinsic. The microtask queue is enabled by default (`RuntimeConfig::MicrotaskQueue = true`), so promise reactions and `queueMicrotask` callbacks drain after each top-level script and after each macrotask, matching standard browser behavior. The polyfill covers the full ES2025 surface (`then`, `catch`, `finally`, `all`, `allSettled`, `any`, `race`, `resolve`, `reject`, `try`, `withResolvers`, `Symbol.toStringTag`), but the following corners differ from the spec:
     *   **No `Symbol.species` dispatch.** Per spec, the prototype methods `Promise.prototype.then`, `Promise.prototype.catch`, and `Promise.prototype.finally` use `SpeciesConstructor(this, %Promise%)` to determine the constructor of the chained promise. The polyfill substitutes `this.constructor` (and takes the built-in `Promise` directly on the common-case `this.constructor === Promise` fast path), so a subclass that overrides `Symbol.species` will not see its override applied (consistent with the engine-wide "Symbol.species not supported" stance noted above). The static methods (`all`, `allSettled`, `any`, `race`, `resolve`, `reject`) use `this` via `NewPromiseCapability` per spec — `Symbol.species` is not involved there.
     *   **Extra microtask hop on subclass `.then`.** When `this.constructor !== Promise`, the polyfill bridges the user's reaction to the subclass capability through an intermediate core `Promise`, costing one additional microtask hop compared to spec's `PerformPromiseThen`, which attaches the reaction directly to the capability. The fast path (`this.constructor === Promise`) is unaffected.
     *   **`Promise.all` 1-microtask fast path (non-spec, default).** When an input is an already-fulfilled core `Promise`, the polyfill synchronously invokes the resolve element and collapses the spec-mandated `PerformPromiseAll` step 8.e microtask hop. This is a deliberate performance default; the spec-compliant `.then`-only dispatch is enabled under the `--test262` runtime flag.

@@ -4,7 +4,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/facebook/hermes/blob/HEAD/CONTRIBUTING.md)
 <img src="./doc/img/logo.svg" alt="Hermes logo - large H with wings" align="right" width="20%"/>
 
-Hermes is a JavaScript engine optimized for fast start-up of [React Native](https://reactnative.dev/) apps. It features ahead-of-time static optimization and compact bytecode.
+Hermes is a JavaScript engine optimized for fast start-up of [React Native](https://reactnative.dev/) apps. It features ahead-of-time static optimization and compact bytecode. The `shermes` tool extends this with full ahead-of-time native compilation of typed JavaScript (Flow syntax) to standalone native binaries — see [Static Hermes](doc/StaticHermes.md).
 
 If you're only interested in using pre-built Hermes in a new or existing React Native app, you do not need to follow this guide or have direct access to the Hermes source. Instead, just follow [these instructions to enable Hermes](https://reactnative.dev/docs/hermes).
 
@@ -18,6 +18,19 @@ The instructions here very briefly cover steps to build the Hermes CLI. They ass
 
 * [Building and Running Hermes](doc/BuildingAndRunning.md)
 * [Using a custom Hermes build in a React Native app](doc/ReactNativeIntegration.md#using-a-custom-hermes-build-in-a-react-native-app)
+
+### Documentation
+
+| Document | What it covers |
+|---|---|
+| [Building and Running](doc/BuildingAndRunning.md) | Build from source, all CLI tools, test suite |
+| [Language Features](doc/Features.md) | Supported ES features, known deviations from spec |
+| [Static Hermes (shermes)](doc/StaticHermes.md) | AOT native compiler for typed JS |
+| [Typed Language](doc/TypedLanguage.md) | Flow-typed JS subset for AOT compilation |
+| [VM Overview](doc/VM.md) | Value representation, GC, object model internals |
+| [Design Overview](doc/Design.md) | Bytecode format, register allocator, serialization |
+| [GC-Safe Coding](doc/GCSafeCoding.md) | Writing correct C++ for the GC heap |
+| [Hermes Blog](doc/blog/README.md) | Technical deep dives |
 
 To build a local debug version of the Hermes CLI tools the following steps should get you started on macOS/Linux:
 

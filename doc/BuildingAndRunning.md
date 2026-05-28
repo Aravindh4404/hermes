@@ -115,3 +115,4 @@ In addition to `hermes`, the following tools will be built:
 - `hbcdump`: Hermes bytecode disassembler
 - `hermesc`: Standalone Hermes compiler. This can compile JavaScript to Hermes bytecode, but does not support executing it.
 - `hvm`: Standalone Hermes VM. This can execute Hermes bytecode, but does not support compiling it.
+- `shermes`: Static Hermes AOT compiler. Compiles typed Flow/JavaScript directly to native executables via C codegen. Supports `-exec` to compile and run in one step. See [Static Hermes](StaticHermes.md) for full usage.
