@@ -8,7 +8,7 @@
 | 2 — Knowledge Graph | gbrain (PGLite) | DONE | see below |
 | 3 — Hierarchical Summaries | LLM Wiki + gbrain | PENDING | — |
 | 4 — Hybrid RAG | Custom Python | PENDING | — |
-| 5 — Agent Memory | /learn + gbrain | PENDING | — |
+| 5 — Agent Memory | /learn + gbrain | IN PROGRESS | see below |
 
 ---
 
@@ -140,7 +140,45 @@ Query → Vector search (pgvector) → top 20 chunks
 
 ---
 
-## Layer 5 — Agent Memory (PENDING)
+## Layer 5 — Agent Memory (IN PROGRESS)
 
-**Approach**: After each significant session run `/learn` to save patterns.  
-**Storage**: gbrain pages with links back to affected code.
+**Date**: 2026-05-28  
+**Tool**: /learn (gstack-learnings-log at `~/.gstack/projects/facebook-hermes/learnings.jsonl`)
+
+### What's saved (15 learnings)
+
+**Pitfalls (4)**
+- `claude-md-size-bloat` — CLAUDE.md auto-gen includes 75KB folder listing; keep under 10KB
+- `gc-safety-handles-required` — All GC objects need Handle<T>, never raw pointers across GC points
+- `putbyindex-handle-leak-fixed` — commit cc7861e6e fixed handle exhaustion in putByIndex_RJS()
+- `microtask-queue-default-true` — commit d8001980e changed MicrotaskQueue default; embedders may break
+
+**Architecture (5)**
+- `hermes-dual-execution-modes` — hermesc→HBC interpreter vs shermes→C AOT (separate pipelines)
+- `hermes-ir-pipeline` — JS→Parser→AST→SemaResolver→HermesIR(SSA)→Optimizer→BCGen
+- `hermes-three-gc-implementations` — GenGC (legacy), Hades (concurrent, default), MallocGC (test)
+- `hermes-lazy-compilation` — top-level eager, inner functions compiled on first call
+- `static-h-branch-purpose` — static_h adds FlowChecker, typed IR, BCGen/SH C codegen
+
+**Tools (3)**
+- `hermesc-vs-shermes` — different flags, different outputs; hermesc for RN, shermes for native
+- `hbc-tools` — hbcdump/hbc-diff/hbc-attribute for bytecode debugging; undocumented
+- `cdp-debugger` — CDP debugger in API/hermes/cdp/; hdb CLI debugger; both undocumented
+
+**Patterns (2)**
+- `hermes-test-structure` — lit tests in test/, gtest in unittests/, shermes in test/shermes/
+- `shermes-flow-types-required` — untyped JS works but falls back to dynamic dispatch
+
+**Operational (1)**
+- `windows-detect-false-negative` — gstack detect reports no-cli on Windows; use gbrain CLI directly
+
+### Sessions run so far (gstack skills)
+- /document-generate → Layer 1 docs
+- /setup-gbrain → Layer 2 brain
+- /sync-gbrain → incremental refresh
+- /learn → Layer 5 patterns
+
+### Next session
+- /retro → retrospective on what worked and what to fix
+- /plan-eng-review → architecture diagram + test matrix for Hermes
+- /review → code review on recent commits
