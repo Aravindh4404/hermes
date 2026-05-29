@@ -463,3 +463,64 @@ RuntimeConfig.h:78
 - **Learnings** — commit-level facts (default changed from false→true) that neither docs nor code surface
 
 Score: **10/10** — complete, exact, verified, sub-5-minute query on a 50K-file codebase.
+
+---
+
+### Test 6 — LSP vs Grep: outgoing call graph
+
+**Date**: 2026-05-29  
+**Question**: What functions does `HermesRuntimeImpl::drainMicrotasks` call, and where is each one defined?  
+**Purpose**: Isolate the one thing LSP does that grep physically cannot — resolve a call graph.
+
+---
+
+#### Without LSP (grep only)
+
+Steps required:
+1. Grep for `drainMicrotasks` → find function body at `API/hermes/hermes.cpp:2227`
+2. Read the 10-line body manually, identify calls by eye
+3. Run a separate grep for each callee to find its definition:
+   - `grep -r "ExecutionScopeRAII"` → multiple hits across headers, pick the right one
+   - `grep -r "checkStatus"` → common name, noisy results
+   - `grep -r "drainJobs"` → need to filter out call sites from definition
+   - `grep -r "clearKeptObjects"` → same
+   - `grep -r "cleanUpFinalizationCallbacks"` → same
+   - `grep -r "hasMicrotaskQueue"` → already known from Test 5
+4. Manually verify each grep result is the definition, not another call site
+
+**Total**: 1 read + 6 grep commands + manual filtering = ~8–12 steps. You can do it, but it's work.
+
+---
+
+#### With LSP (2 calls)
+
+```
+prepareCallHierarchy  API/hermes/hermes.cpp:2227
+→ confirms symbol: HermesRuntimeImpl::drainMicrotasks
+
+outgoingCalls  API/hermes/hermes.cpp:2227
+→ returns instantly:
+```
+
+| Callee | Defined in | Line | Called from |
+|--------|-----------|------|-------------|
+| `ExecutionScopeRAII` (constructor) | `API/hermes/hermes.cpp` | 1390 | line 2228 |
+| `checkStatus` (method) | `API/hermes/hermes.cpp` | 3610 | line 2230 |
+| `drainJobs` (method) | `lib/VM/Runtime.cpp` | 2005 | line 2230 |
+| `clearKeptObjects` (method) | `lib/VM/Runtime.cpp` | 2050 | line 2234 |
+| `cleanUpFinalizationCallbacks` (method) | `lib/VM/Runtime.cpp` | 2058 | line 2235 |
+| `hasMicrotaskQueue` (method) | `include/hermes/VM/Runtime.h` | 997 | line 2229 |
+
+**Total**: 2 LSP calls. No grep. No manual reading. No filtering.
+
+---
+
+#### What this proves
+
+The question "what does this function call?" has two parts:
+1. **What names appear in the body** — grep can do this (with noise)
+2. **Where each name is defined** — grep cannot do this reliably without multiple follow-up searches
+
+LSP answers both in one operation because it works on the compiled symbol graph, not text. It knows `drainJobs` at line 2230 resolves to the definition at `lib/VM/Runtime.cpp:2005` — not the other 4 places `drainJobs` appears as a string.
+
+**The single clearest difference**: grep finds text. LSP resolves symbols.
