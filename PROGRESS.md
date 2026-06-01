@@ -161,20 +161,62 @@ Core docs ingested:
 
 All articles cross-referenced with bidirectional See Also links. Obsidian-compatible wikilinks + markdown links.
 
+### Step 5 — Wiki query (DONE)
+
+`/wiki:query "What is the overall architecture of Hermes?" --wiki hermes-codebase`
+
+**Answer summary** (from 3 articles: hermes-architecture, hermes-compiler-pipeline, hermes-hades-gc):
+
+Hermes has two execution paths sharing one compiler frontend:
+- **Path 1**: hermesc → `.hbc` bytecode → interpreter (+ optional JIT)
+- **Path 2**: shermes → C codegen → native binary (AOT)
+
+Both paths share: Parser (3 phases: PreParse/LazyParse/FullParse) → SemanticResolver → HermesIR (SSA) → Optimizer → Register allocator. They diverge only at BCGen vs BCGen/SH.
+
+VM ownership chain: `JSFunction → Domain → RuntimeModule → BytecodeModule`
+
+GC: Hades (default) — concurrent OG collection via SATB write barriers, 128-element buffer, Write Barrier Mutex. YG uses bump-pointer allocation.
+
+Value encoding: HV64 (NaN-boxing, all platforms) or HV32 (32-bit offsets, Android/iOS 64-bit).
+
+**Knowledge gaps identified**: JIT internals, CJS module system, C ABI/JSI layer not covered in wiki.
+
+### Layer 3 + GBrain integration (DONE)
+
+**Date**: 2026-06-01  
+**Tool**: `gbrain import` (v0.18.2)  
+**Source name**: `hermes-wiki-summaries` (implemented via tag — v0.18.2 has no named sources)
+
+```bash
+gbrain import /c/Users/aravi/wiki/topics/hermes-codebase/wiki --no-embed --json
+# → imported=16, skipped=0, errors=0, chunks=31
+# → gbrain pages: 154 total (138 hermes docs + 16 wiki articles)
+```
+
+All 11 compiled articles tagged `hermes-wiki-summaries`:
+```
+topics/hermes-architecture      topics/hermes-compiler-pipeline  topics/hermes-hades-gc
+topics/hermes-static-hermes     concepts/hermes-value-representation  concepts/hermes-gc-safety
+concepts/hermes-ir              concepts/hermes-typed-mode       concepts/hermes-optimizer
+references/hermes-ecmascript-compatibility  references/hermes-tools-reference
+```
+
+Retrieval verified: `gbrain search "hermes architecture"` returns `topics/hermes-architecture` at score 0.9998 as top result.
+
+To search wiki articles only:
+```bash
+gbrain list --tag hermes-wiki-summaries        # list all
+gbrain get topics/hermes-architecture          # get by slug
+gbrain search "<query>"                        # full search (all 154 pages)
+```
+
+**Note on capability check**: `gbrain put` reads from `/dev/stdin` which doesn't exist on Windows. The `/sync-gbrain` capability check returns false-negative on this machine (same class as `gstack-gbrain-detect`). GBrain is operational — import and search confirmed working.
+
 ### Next steps for Layer 3
 
-1. Run `gbrain index` on the wiki's `wiki/` directory to make articles searchable via GBrain
-2. Optionally add more articles for: CJS modules, regexp engine, string table format
-3. Run `/wiki:lint` to verify consistency
-4. Run `/wiki:query "What is the overall architecture of Hermes?"` for the Step 5 query
-
-### Layer 3 + GBrain integration (planned)
-
-The wiki articles at `C:\Users\aravi\wiki\topics\hermes-codebase\wiki\` are Layer 3.
-To integrate with GBrain (Layer 2), index the wiki articles as a new GBrain source:
-```bash
-gbrain index "C:\Users\aravi\wiki\topics\hermes-codebase\wiki" --source hermes-wiki
-```
+1. Optionally add more articles for: CJS modules, regexp engine, string table format
+2. Run `/wiki:lint` to verify consistency
+3. Get embedding API key (`VOYAGE_API_KEY`) → `gbrain embed --stale` to upgrade from keyword to vector search
 
 ---
 

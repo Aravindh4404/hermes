@@ -81,7 +81,13 @@ Use `gbrain search "<query>"` or `Glob` for file lookup — full file listing re
 - MCP registered: yes (user scope)
 - Artifacts sync: off
 - Current repo policy: read-write
-- Source: gstack-code-hermes (135 markdown docs indexed)
+- Source: gstack-code-hermes (154 pages — 138 hermes docs + 16 wiki articles)
+- Layer 3 wiki: `C:\Users\aravi\wiki\topics\hermes-codebase\wiki\` imported as tag `hermes-wiki-summaries`
+  - Slugs: topics/hermes-architecture, topics/hermes-compiler-pipeline, topics/hermes-hades-gc,
+    topics/hermes-static-hermes, concepts/hermes-value-representation, concepts/hermes-gc-safety,
+    concepts/hermes-ir, concepts/hermes-typed-mode, concepts/hermes-optimizer,
+    references/hermes-ecmascript-compatibility, references/hermes-tools-reference
+  - Search: `gbrain search "<query>"` or `gbrain list --tag hermes-wiki-summaries`
 
 ## GBrain Search Guidance (configured by /sync-gbrain)
 <!-- gstack-gbrain-search-guidance:start -->
