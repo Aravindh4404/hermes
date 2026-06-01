@@ -6,7 +6,7 @@
 |-------|------|--------|--------|
 | 1 — CLAUDE.md + Docs | /document-generate | DONE | ffaa5c2a6 |
 | 2 — Knowledge Graph | gbrain (PGLite) | DONE | see below |
-| 3 — Hierarchical Summaries | LLM Wiki + gbrain | PENDING | — |
+| 3 — Hierarchical Summaries | LLM Wiki + gbrain | DONE | see below |
 | 4 — Hybrid RAG | Custom Python | PENDING | — |
 | 5 — Agent Memory | /learn + gbrain | IN PROGRESS | see below |
 
@@ -113,14 +113,68 @@ gbrain list
 
 ---
 
-## Layer 3 — Hierarchical Summaries (PENDING)
+## Layer 3 — Hierarchical Summaries (DONE)
 
-**Planned approach**:
-1. Use gbrain + LLM to generate repo → module → file → function level summaries
-2. Store as gbrain pages with links to the knowledge graph
-3. Structure: `summary/repo`, `summary/lib/vm`, `summary/lib/bcgen`, etc.
+**Date**: 2026-06-01  
+**Tool**: LLM Wiki (llm-wiki plugin) — hub at `C:\Users\aravi\wiki`  
+**Wiki**: `hermes-codebase` topic wiki at `C:\Users\aravi\wiki\topics\hermes-codebase\`
 
-**Prerequisite**: Layer 2 embeddings working (need API key)
+### What was built
+
+**Step 1 — Hub + wiki initialized**
+- Hub created: `C:\Users\aravi\wiki\` (wikis.json, _index.md, log.md, topics/)
+- Config: `C:\Users\aravi\.config\llm-wiki\config.json` → `hub_path: ~/wiki`
+- Topic wiki: `hermes-codebase` registered with portable path `topics/hermes-codebase`
+- Obsidian-compatible vault config (app.json, appearance.json, graph.json)
+
+**Step 2 — Doc ingestion (44 raw sources)**  
+Collection: `hermes-doc` via git adapter at commit `e9a97f37f` (static_h branch)
+- 35 articles in `raw/articles/`: all core architecture docs + 10 blog posts
+- 8 notes in `raw/notes/`: 7 IR type system plans + PROGRESS.md
+- 1 manifest in `raw/repos/`
+
+Core docs ingested:
+- Design.md, VM.md, IR.md, Optimizer.md, StaticHermes.md, BuildingAndRunning.md
+- Features.md, Hades.md, GenGC.md, TypedLanguage.md, GCSafeCoding.md
+- ReactNativeIntegration.md, LazyEvalCompilation.md, Modules.md, RegExp.md
+- Strings.md, MemoryProfilers.md, PerfProfiling.md, CodingStandards.md
+- IntlAPIs.md, CrossCompilation.md, SpecIncompat.md, typescript-stripping.md
+- Emscripten.md, HighLevelOptimizations.md
+- All 10 blog posts from doc/blog/
+- All 7 plan files from doc/plans/ir-type/
+
+**Step 3 — Wiki compilation (11 articles)**
+
+| Article | Category | Sources | Key content |
+|---------|----------|---------|-------------|
+| hermes-architecture | topic | 6 | Dual execution paths, VM ownership chain, memory modes, tools |
+| hermes-compiler-pipeline | topic | 7 | Parser phases, IR, reg alloc, bytecode format, string packing, lazy |
+| hermes-hades-gc | topic | 4 | SATB barriers (128-elem buffer), freelist, concurrent mark/sweep, compaction |
+| hermes-static-hermes | topic | 6 | shermes AOT pipeline, typed mode, Wasm, performance benchmarks |
+| hermes-value-representation | concept | 3 | HermesValue NaN-boxing, HermesValue32, PinnedHermesValue, HV64/HV32 |
+| hermes-gc-safety | concept | 3 | Locals+PinnedValue API, Handle/PseudoHandle, GC safepoints |
+| hermes-ir | concept | 4 | SSA IR, closure scopes, 16-bit type bitmask, all instructions |
+| hermes-typed-mode | concept | 5 | Exact objects, nominal classes, bounds-checked arrays, Flow types |
+| hermes-optimizer | concept | 4 | Passes, analyses, canonicalization/simplification/lowering cycle |
+| hermes-ecmascript-compatibility | reference | 3 | ES2015–ES2026 features, exclusions, deviations, Intl matrix |
+| hermes-tools-reference | reference | 7 | All tools, build guide, heap profiling, JIT perf, cross-compile |
+
+All articles cross-referenced with bidirectional See Also links. Obsidian-compatible wikilinks + markdown links.
+
+### Next steps for Layer 3
+
+1. Run `gbrain index` on the wiki's `wiki/` directory to make articles searchable via GBrain
+2. Optionally add more articles for: CJS modules, regexp engine, string table format
+3. Run `/wiki:lint` to verify consistency
+4. Run `/wiki:query "What is the overall architecture of Hermes?"` for the Step 5 query
+
+### Layer 3 + GBrain integration (planned)
+
+The wiki articles at `C:\Users\aravi\wiki\topics\hermes-codebase\wiki\` are Layer 3.
+To integrate with GBrain (Layer 2), index the wiki articles as a new GBrain source:
+```bash
+gbrain index "C:\Users\aravi\wiki\topics\hermes-codebase\wiki" --source hermes-wiki
+```
 
 ---
 
