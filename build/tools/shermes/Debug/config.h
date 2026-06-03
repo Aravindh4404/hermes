@@ -1,0 +1,5 @@
+#define SHERMES_CC                    R"(C:/Program Files/LLVM/bin/clang.exe)"
+#define SHERMES_CC_SYSCFLAGS          R"()"
+#define SHERMES_CC_SYSLDFLAGS         R"()"
+#define SHERMES_CC_INCLUDE_PATH       R"(C:/dev/hermes-test/hermes/build/lib/config:C:/dev/hermes-test/hermes/include)"
+#define SHERMES_CC_LIB_PATH           R"(C:/dev/hermes-test/hermes/build/lib:C:/dev/hermes-test/hermes/build/jsi:C:/dev/hermes-test/hermes/build/tools/shermes)"
