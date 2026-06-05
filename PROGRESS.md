@@ -5,8 +5,8 @@
 | Layer | Tool | Status | Commit |
 |-------|------|--------|--------|
 | 1 — CLAUDE.md + Docs | /document-generate | DONE | ffaa5c2a6 |
-| 2 — Knowledge Graph | gbrain (PGLite) | DONE | see below |
-| 3 — Hierarchical Summaries | LLM Wiki + gbrain | DONE | see below |
+| 2 — Knowledge Graph | gbrain (PGLite) | DONE | 6a77fa618 |
+| 3 — Hierarchical Summaries | LLM Wiki + gbrain | DONE | 6a77fa618 |
 | 4 — Hybrid RAG | Custom Python | PENDING | — |
 | 5 — Agent Memory | /learn + gbrain | IN PROGRESS | see below |
 
@@ -226,6 +226,28 @@ gbrain search "<query>"                        # full search (all 154 pages)
 ```
 
 **Note on capability check**: `gbrain put` reads from `/dev/stdin` which doesn't exist on Windows. The `/sync-gbrain` capability check returns false-negative on this machine (same class as `gstack-gbrain-detect`). GBrain is operational — import and search confirmed working.
+
+### TASK 3 — /sync-gbrain refresh (2026-06-05)
+
+**Action**: Imported new doc/ and wiki/ content into gstack-code-hermes source after TASK 2 rebuild.
+
+```bash
+gbrain import "C:/dev/hermes-test/hermes/doc" --source gstack-code-hermes --no-embed
+# → 2 pages imported (new: JSParser.md, PassManager.md updates), 50 skipped
+gbrain import "C:/Users/aravi/wiki/topics/hermes-codebase/wiki" --source gstack-code-hermes --no-embed
+# → 16 pages imported (all 11 wiki articles + index pages), 0 skipped
+```
+
+**Result**: gbrain source `gstack-code-hermes` now has **68 pages** (was 51):
+- 52 hermes doc/ pages (summaries, blog posts, design docs, plans)
+- 16 wiki article pages (11 compiled articles + 5 index pages)
+
+**CLAUDE.md**: GBrain Search Guidance block confirmed present; page count updated to 68.
+
+**Search verified**:
+- `gbrain search "optimizer passes DCE Mem2Reg"` → hits `concepts/hermes-optimizer` (score 0.9996)
+- `gbrain search "hermes compiler pipeline"` → hits `topics/hermes-compiler-pipeline` (score 1.0)
+- `gbrain search "JSParser PreParse LazyParse"` → hits `summaries/jsparser` (score 0.9239)
 
 ### Next steps for Layer 3
 

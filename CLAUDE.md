@@ -81,7 +81,7 @@ Use `gbrain search "<query>"` or `Glob` for file lookup — full file listing re
 - MCP registered: yes (user scope)
 - Artifacts sync: off
 - Current repo policy: read-write
-- Source: gstack-code-hermes (154 pages — 138 hermes docs + 16 wiki articles)
+- Source: gstack-code-hermes (68 pages — hermes doc/ summaries + 11 wiki articles + index pages)
 - Layer 3 wiki: `C:\Users\aravi\wiki\topics\hermes-codebase\wiki\` imported as tag `hermes-wiki-summaries`
   - Slugs: topics/hermes-architecture, topics/hermes-compiler-pipeline, topics/hermes-hades-gc,
     topics/hermes-static-hermes, concepts/hermes-value-representation, concepts/hermes-gc-safety,
