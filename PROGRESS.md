@@ -157,18 +157,24 @@ Core docs ingested:
 | Article | Category | Sources | Key content |
 |---------|----------|---------|-------------|
 | hermes-architecture | topic | 6 | Dual execution paths, VM ownership chain, memory modes, tools |
-| hermes-compiler-pipeline | topic | 7 | Parser phases, IR, reg alloc, bytecode format, string packing, lazy |
+| hermes-compiler-pipeline | topic | 9 | Parser phases (JSLexer::advance detail), IR, reg alloc, bytecode format, string packing, lazy |
 | hermes-hades-gc | topic | 4 | SATB barriers (128-elem buffer), freelist, concurrent mark/sweep, compaction |
 | hermes-static-hermes | topic | 6 | shermes AOT pipeline, typed mode, Wasm, performance benchmarks |
 | hermes-value-representation | concept | 3 | HermesValue NaN-boxing, HermesValue32, PinnedHermesValue, HV64/HV32 |
 | hermes-gc-safety | concept | 3 | Locals+PinnedValue API, Handle/PseudoHandle, GC safepoints |
 | hermes-ir | concept | 4 | SSA IR, closure scopes, 16-bit type bitmask, all instructions |
 | hermes-typed-mode | concept | 5 | Exact objects, nominal classes, bounds-checked arrays, Flow types |
-| hermes-optimizer | concept | 4 | Passes, analyses, canonicalization/simplification/lowering cycle |
+| hermes-optimizer | concept | 5 | Passes, analyses, canonicalization/simplification/lowering cycle + full 45-pass sequence |
 | hermes-ecmascript-compatibility | reference | 3 | ES2015–ES2026 features, exclusions, deviations, Intl matrix |
 | hermes-tools-reference | reference | 7 | All tools, build guide, heap profiling, JIT perf, cross-compile |
 
 All articles cross-referenced with bidirectional See Also links. Obsidian-compatible wikilinks + markdown links.
+
+### Refresh (2026-06-05)
+
+**New sources ingested**: JSParser/JSLexer summary (parser phases PreParse/LazyParse/FullParse + JSLexer::advance); PassManager updated with full optimizer pass chain  
+**Recompiled**: hermes-optimizer (full 45-pass sequence added), hermes-compiler-pipeline (JSLexer::advance + per-phase detail added)  
+**Raw source count**: 52 (was 51)
 
 ### Step 5 — Wiki query (DONE)
 
