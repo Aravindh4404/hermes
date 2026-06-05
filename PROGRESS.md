@@ -34,7 +34,30 @@ New files created:
 - `doc/summaries/JSParser.md` — Parser phases (PreParse/LazyParse/FullParse), JSLexer::advance, data flow
 - `doc/summaries/PassManager.md` — Updated with full `runFullOptimizationPasses` pass sequence (45 passes in 5 phases)
 
-doc/summaries/ now has 8 files (was 7). Remaining gaps addressed in TASK 5: parser subsystem + optimizer subsystem + JSI layer sections in CodebaseGraph.md.
+doc/summaries/ now has 8 files (was 7).
+
+### TASK 5 — /investigate (2026-06-05)
+
+Three subsystems investigated via direct source reads and added to `doc/CodebaseGraph.md` as sections 11-13:
+
+**Section 11 — Parser Subsystem**
+- `enum ParserPass` (JSParser.h:26): PreParse/LazyParse/FullParse
+- `JSLexer::advance` (JSLexer.cpp:255): tokenizer entry point, GrammarContext dispatch, lookahead1/lookahead2
+- `JSParserImpl::advance` (JSParserImpl.h:423) → `lexer_.advance(grammarContext)`
+- CompilerDriver.cpp:824-843: `preParseBuffer()` + `JSParser(fileBufId, LazyParse/FullParse)` + `jsParser.parse()`
+
+**Section 12 — Optimizer Subsystem**
+- `runFullOptimizationPasses(Module &M)` (Pipeline.cpp:39): all 45 pass addXxx() calls documented
+- `PassManager::run(Module*)` (PassManager.cpp:218): iterates pipeline, calls `runPassOnModule()`
+- `PassManager::run(Function*)` (PassManager.cpp:96): `FP->runOnFunction(F)` per-function
+- Pass descriptions table: 11 key passes with category and effect
+
+**Section 13 — JSI Layer**
+- `jsi::ICast → jsi::IRuntime → jsi::Runtime → HermesRuntime` hierarchy
+- `makeHermesRuntime()` → `HermesRuntimeImpl` → `vm::Runtime::create()`
+- `evaluateJavaScript()` (hermes.cpp:2208) → `evaluateJavaScriptWithSourceMap()` (1946):
+  bytecode path (BCProviderFromBuffer) vs source path (createBCProviderFromSrc → full compiler pipeline) → `runtime_.runBytecode()`
+- JSI surface area table: 7 key methods with locations
 
 ---
 

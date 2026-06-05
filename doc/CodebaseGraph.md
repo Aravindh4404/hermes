@@ -437,6 +437,253 @@ Every function-to-function call that crosses a module boundary, as confirmed by 
 
 ---
 
+## 11 — Parser Subsystem
+
+*Sources: `include/hermes/Parser/JSParser.h:26`, `lib/Parser/JSParserImpl.h:423`, `lib/CompilerDriver/CompilerDriver.cpp:824-843`, direct source reads.*
+
+### Three-Phase Parse Flow (CompilerDriver.cpp:824-843)
+
+```
+CompilerDriver::parseJS()
+    │
+    ├── (lazy mode: large file)
+    │   parser::JSParser::preParseBuffer(*context, fileBufId)   ← PreParse
+    │       → builds PreParsedData (function boundary table, no AST)
+    │       → returns parser with use_static_builtin flag
+    │   mode = parser::LazyParse
+    │
+    ├── (always)
+    │   parser::JSParser jsParser(*context, fileBufId, mode)     ← LazyParse or FullParse
+    │   jsParser.parse()                                         ← returns Optional<ESTree::ProgramNode*>
+    │
+    └── mode = parser::FullParse  (default, used by hermesc/shermes)
+        parser::JSParser jsParser(*context, fileBufId, FullParse)
+        jsParser.parse()
+```
+
+### enum ParserPass (JSParser.h:26)
+
+| Pass | Description | Used when |
+|------|------------|-----------|
+| `PreParse` | Scans token stream, records function boundaries into `PreParsedData`; no AST nodes | First pass for lazy compilation |
+| `LazyParse` | Parses single function body using `PreParsedData` offsets; stubs all others | Triggered by `CodeBlock::compileLazyFunction()` at runtime |
+| `FullParse` | Parses entire source into complete ESTree AST | `hermesc`, `shermes`, non-lazy mode |
+
+### JSParserImpl::advance (JSParserImpl.h:423) → JSLexer::advance (JSLexer.cpp:255)
+
+```
+JSParserImpl::advance(grammarContext)             ← called by every grammar rule
+    │
+    └── lexer_.advance(grammarContext)            ← JSLexer::advance at line 255
+            │
+            ├── skip whitespace (optimisticSkipWhitespace)
+            ├── switch(*curCharPtr_):
+            │   ├── PUNC_L1_1/PUNC_L2_3: set Token punctuator, advance ptr
+            │   ├── [a-z][A-Z]_: scanIdentifierOrKeyword()
+            │   ├── [0-9]: scanNumber()
+            │   ├── '"' / "'": scanString()
+            │   ├── '/': disambiguate by GrammarContext (AllowRegExp → regex, AllowDiv → div)
+            │   └── '`': scanTemplateLiteral()
+            └── returns const Token* (owned by lexer, valid until next advance)
+
+JSLexer::lookahead1 (JSLexer.cpp:1038)           ← non-destructive 1-token lookahead
+JSLexer::lookahead2 (JSLexer.cpp:1101)           ← non-destructive 2-token lookahead
+```
+
+### GrammarContext (JSLexer.h)
+
+| Value | Used when |
+|-------|-----------|
+| `AllowRegExp` | After statement-opening tokens — `/` starts a regex literal |
+| `AllowDiv` | After values/identifiers — `/` is division operator |
+| `AllowJSXIdentifier` | In JSX attribute names |
+| `Type` | After `:` in Flow/TS type positions |
+
+### Parser data flow summary
+
+```
+Source text
+    → JSLexer::advance()             produces Token stream
+    → JSParserImpl grammar rules     consume tokens via advance()
+    → ESTree::NodePtr nodes          allocated in AST allocator
+    → ESTree::ProgramNode*           returned by jsParser.parse()
+    → SemanticResolver               resolves variables/scopes
+    → ESTreeIRGen                    generates HermesIR
+```
+
+---
+
+## 12 — Optimizer Subsystem
+
+*Sources: `lib/Optimizer/PassManager/Pipeline.cpp:39-112`, `lib/Optimizer/PassManager/PassManager.cpp:96,218`, direct source reads.*
+
+### Call chain: runFullOptimizationPasses → PM.run → FP.runOnFunction
+
+```
+hermes::runFullOptimizationPasses(Module &M)    ← Pipeline.cpp:39
+    │
+    ├── PassManager PM("Full opts")             ← constructs pass pipeline
+    ├── PM.addLowerGeneratorFunction()          ← Phase 1 begin
+    ├── PM.addInstSimplify()
+    ├── PM.addResolveStaticRequire()
+    ├── PM.addDCE()
+    ├── PM.addLowerBuiltinCallsOptimized()
+    ├── PM.addSimplifyCFG()                     ← Phase 2 begin
+    ├── PM.addSimpleStackPromotion()
+    ├── PM.addFrameLoadStoreOpts()
+    ├── addMem2Reg() [lambda]                   ← routes to addMem2Reg or addSimpleMem2Reg
+    ├── PM.addSimpleStackPromotion()
+    ├── PM.addScopeElimination()
+    ├── PM.addFunctionAnalysis()                ← Phase 3 begin
+    ├── PM.addInlining()
+    ├── PM.addDCE()
+    ├── PM.addObjectMergeNewStores()
+    ├── PM.addObjectStackPromotion()
+    ├── PM.addTypeInference()
+    ├── PM.addSimpleStackPromotion()
+    ├── PM.addInstSimplify()
+    ├── PM.addDCE()
+    ├── addMem2Reg()
+    ├── PM.addFunctionAnalysis()                ← Phase 4 begin
+    ├── PM.addMetroRequire()
+    ├── PM.addInlining()
+    ├── PM.addDCE()
+    ├── PM.addSimpleStackPromotion()
+    ├── PM.addFrameLoadStoreOpts()
+    ├── addMem2Reg()
+    ├── PM.addScopeElimination()
+    ├── PM.addFunctionAnalysis()
+    ├── PM.addScopeHoisting()
+    ├── PM.addObjectStackPromotion()
+    ├── PM.addTypeInference()                   ← Phase 5 begin
+    ├── PM.addCSE()
+    ├── PM.addPrivateBrandCheckDedup()
+    ├── PM.addTDZDedup()
+    ├── PM.addSimplifyCFG()
+    ├── PM.addInstSimplify()
+    ├── PM.addFuncSigOpts()
+    ├── PM.addDCE()
+    ├── PM.addSimplifyCFG()
+    ├── PM.addFrameLoadStoreOpts()
+    ├── addMem2Reg()
+    ├── PM.addAuditor()
+    ├── PM.addTypeInference()
+    └── PM.run(&M)                              ← executes all added passes
+```
+
+### PassManager::run(Module*) — PassManager.cpp:218
+
+```
+PassManager::run(Module *M)                     ← PassManager.cpp:218
+    │
+    └── for each pass in pipeline_:
+            runPassOnModule(M, pass.get(), dynInfo)
+                │
+                ├── (FunctionPass) → for each Function in M:
+                │       FP->runOnFunction(F)   ← PassManager.cpp:96 inner loop
+                │
+                └── (ModulePass) → MP->runOnModule(M)
+```
+
+### Key pass descriptions
+
+| Pass | Category | Effect |
+|------|----------|--------|
+| `LowerGeneratorFunction` | Lowering | Generator → state machine (inner+outer function) |
+| `InstSimplify` | Simplification | Constant folding, algebraic identities |
+| `ResolveStaticRequire` | Lowering | `require()` → known module ID |
+| `DCE` | Simplification | Dead code elimination |
+| `SimplifyCFG` | Simplification | Merge blocks, remove unreachable |
+| `Mem2Reg/SimpleMem2Reg` | Promotion | Stack slots → SSA registers |
+| `FunctionAnalysis` | Analysis | Per-function attributes (pure, side-effect-free) |
+| `Inlining` | Canonicalization | Inline small/hot functions |
+| `TypeInference` | Analysis | Propagate types forward through IR |
+| `CSE` | Simplification | Common subexpression elimination |
+| `FuncSigOpts` | Optimization | Specialize call sites to known signatures |
+
+---
+
+## 13 — JSI Layer
+
+*Sources: `API/jsi/jsi/jsi.h:338,705`, `API/hermes/hermes.h:197`, `API/hermes/hermes.cpp:1946,2208`, direct source reads.*
+
+### JSI class hierarchy
+
+```
+jsi::ICast                                       ← jsi.h:338 — base interface for runtime casting
+    └── jsi::IRuntime                            ← jsi.h:338 — pure virtual interface
+            │   virtual evaluateJavaScript()
+            │   virtual prepareJavaScript()
+            │   virtual evaluatePreparedJavaScript()
+            │   virtual queueMicrotask()
+            │   virtual createPropNameID*()
+            │   virtual create*(Object/String/BigInt/Array...)
+            │   virtual getProperty() / setProperty()
+            │   virtual call() / callAsConstructor()
+            └── jsi::Runtime                     ← jsi.h:705 — concrete abstract base
+                    └── HermesRuntime            ← hermes.h:197
+                                : public jsi::Runtime
+                                : public IHermes
+                                : public IHermesSHUnit
+                            └── (impl: HermesRuntimeImpl in hermes.cpp)
+```
+
+### makeHermesRuntime → HermesRuntimeImpl construction
+
+```
+facebook::hermes::makeHermesRuntime(RuntimeConfig)  ← hermes.h:226
+    └── new HermesRuntimeImpl(runtimeConfig)
+            │
+            ├── vm::Runtime::create(runtimeConfig)   ← creates the VM Runtime
+            └── compileFlags_ = runtimeConfig flags
+```
+
+### evaluateJavaScript — JSI → VM path
+
+```
+jsi::IRuntime::evaluateJavaScript()              ← virtual dispatch (jsi.h:357)
+    │
+    └── HermesRuntimeImpl::evaluateJavaScript()  ← hermes.cpp:2208
+            │   ExecutionScopeRAII scopeRAII(mutatorScope)
+            └── evaluateJavaScriptWithSourceMap(buffer, nullptr, sourceURL)
+                    │
+                    ├── isHermesBytecode(buffer)?
+                    │   YES: hbc::BCProviderFromBuffer::createBCProviderFromBuffer()
+                    │   NO:  hbc::createBCProviderFromSrc()             ← compile source
+                    │            → CompilerDriver pipeline:
+                    │               parseJS() → IRGen → Optimizer → BCGen
+                    │
+                    └── runtime_.runBytecode(bcProvider, runtimeFlags, sourceURL, env)
+                            → loadBytecodeModule()
+                            → interpretFunction() / JIT path
+```
+
+### Key JSI surface area
+
+| Method | Where defined | What it does |
+|--------|--------------|--------------|
+| `evaluateJavaScript()` | jsi.h:357 | Run JS source or bytecode buffer |
+| `prepareJavaScript()` | jsi.h:372 | Compile to PreparedJavaScript (cacheable) |
+| `evaluatePreparedJavaScript()` | jsi.h:380 | Run a pre-compiled PreparedJavaScript |
+| `queueMicrotask()` | jsi.h:388 | Enqueue a microtask callback |
+| `createObject()` / `getProperty()` | jsi.h | Object manipulation |
+| `call()` / `callAsConstructor()` | jsi.h | Function invocation |
+| `drainMicrotasks()` | hermes.h | Hermes-specific: drain the microtask queue |
+
+### JSI → VM ownership
+
+```
+jsi::Runtime (abstract)
+    owns: HermesRuntimeImpl
+        owns: vm::Runtime                  ← the actual JS engine
+            owns: vm::GCBase (Hades GC)
+            owns: vm::Interpreter
+            owns: vm::JSLib
+            owns: vm::Domain set
+```
+
+---
+
 ## 10 — Key Structural Observations
 
 **The VM execution chain has four layers.** `runBytecode` → `interpretFunction` (wrapper) → `interpretFunctionImpl` (setup) → `Interpreter::interpretFunction` (dispatch). The template parameter controls whether it is a generator or normal function.
@@ -453,4 +700,4 @@ Every function-to-function call that crosses a module boundary, as confirmed by 
 
 ---
 
-*Sources: clangd LSP `outgoingCalls` on evaluateJavaScriptWithSourceMap (43 calls), processSourceFiles (124 calls), Interpreter::interpretFunction (313 calls), youngGenCollection (64 calls), oldGenCollection (32 calls), CDPAgent::handleCommand (16 calls), Runtime::drainJobs (11 calls); `incomingCalls` on interpretFunction, youngGenCollection, handleCommand; source reads for triggerInterrupt_TS, compileImpl, runBytecode; grep-based `#include` count matrix.*
+*Sources: clangd LSP `outgoingCalls` on evaluateJavaScriptWithSourceMap (43 calls), processSourceFiles (124 calls), Interpreter::interpretFunction (313 calls), youngGenCollection (64 calls), oldGenCollection (32 calls), CDPAgent::handleCommand (16 calls), Runtime::drainJobs (11 calls); `incomingCalls` on interpretFunction, youngGenCollection, handleCommand; source reads for triggerInterrupt_TS, compileImpl, runBytecode; grep-based `#include` count matrix. Sections 11-13 added 2026-06-05: direct source reads of JSParser.h:26, JSLexer.cpp:255, JSParserImpl.h:423, CompilerDriver.cpp:824-843, Pipeline.cpp:39-112, PassManager.cpp:96,218, jsi.h:338,705, hermes.h:197, hermes.cpp:1946,2208.*
