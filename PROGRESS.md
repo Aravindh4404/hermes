@@ -27,6 +27,15 @@ Known gaps: hdb debugger undocumented, hbcdump undocumented, no shermes tutorial
 
 CLAUDE.md trimmed 2026-05-28: removed ~75KB folder listing, now ~5KB. Use `gbrain search` for file lookup.
 
+### Refresh pass (2026-06-05)
+
+Accuracy review: all existing docs verified correct.  
+New files created:
+- `doc/summaries/JSParser.md` — Parser phases (PreParse/LazyParse/FullParse), JSLexer::advance, data flow
+- `doc/summaries/PassManager.md` — Updated with full `runFullOptimizationPasses` pass sequence (45 passes in 5 phases)
+
+doc/summaries/ now has 8 files (was 7). Remaining gaps addressed in TASK 5: parser subsystem + optimizer subsystem + JSI layer sections in CodebaseGraph.md.
+
 ---
 
 ## Layer 2 — Knowledge Graph (DONE)

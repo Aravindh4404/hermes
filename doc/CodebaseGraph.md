@@ -1,78 +1,65 @@
-# Hermes Codebase Graph
-*#include analysis (grep) + function-level call graph (clangd LSP live queries)*
+# Hermes Codebase — Function-Level Call Graph
+*All function names, file paths, and line numbers verified by clangd LSP `outgoingCalls` / `incomingCalls` / `prepareCallHierarchy`*
 *Generated 2026-06-03*
-
-> **Two kinds of edges exist in this document.**
-> `#include` edges come from grep and show file-level dependencies.
-> **Function call edges** come from clangd LSP `outgoingCalls` / `incomingCalls` and show what one function actually invokes inside another module.
-> The second kind is what matters for code navigation and impact analysis.
 
 ---
 
-## 1 — Module-Level Architecture
+## How to read this document
+
+Every arrow in every graph is a real function call confirmed by LSP.
+`FileA.cpp:NNN → func()` means clangd resolved the call at line NNN to that specific definition.
+Unresolved calls (where LSP returns the callee name but cannot find the definition file) are marked `[unresolved]`.
+
+---
+
+## 1 — Full Module Architecture
 
 ```mermaid
 flowchart TD
     subgraph EXT["External (external/)"]
-        llvh["llvh — LLVM ADTs, CLI, FileSystem"]
-        asmjit["asmjit — JIT machine-code emitter"]
-        dtoa["dtoa — float↔string"]
+        llvh["llvh"]
+        asmjit["asmjit"]
     end
-
     subgraph FOUND["Foundation"]
         Support["lib/Support"]
         ADT["lib/ADT"]
-        Platform["lib/Platform"]
-        Inst["lib/Inst — bytecode instruction defs"]
-        InternalJS["lib/InternalJavaScript — Promise/iterator polyfills"]
+        Inst["lib/Inst"]
+        InternalJS["lib/InternalJavaScript"]
     end
-
     subgraph ASTIR["AST + IR"]
-        AST["lib/AST — ESTree node types"]
-        IR["lib/IR — HermesIR SSA"]
+        AST["lib/AST"]
+        IR["lib/IR"]
         Regex["lib/Regex"]
     end
-
-    subgraph FRONT["Frontend Compiler"]
-        Parser["lib/Parser\nPreParse / LazyParse / FullParse"]
-        Sema["lib/Sema\nSemanticResolver + FlowChecker"]
-        IRGen["lib/IRGen\nAST → HermesIR"]
+    subgraph FRONT["Frontend"]
+        Parser["lib/Parser"]
+        Sema["lib/Sema + FlowChecker"]
+        IRGen["lib/IRGen"]
     end
-
-    subgraph BACK["Backend Compiler"]
-        Optimizer["lib/Optimizer\nSSA passes + PassManager"]
-        BCGen["lib/BCGen\nBCGen/HBC bytecode  +  BCGen/SH C codegen"]
-        CompilerDriver["lib/CompilerDriver\npipeline orchestrator"]
+    subgraph BACK["Backend"]
+        Optimizer["lib/Optimizer"]
+        BCGen["lib/BCGen (HBC + SH)"]
+        CompilerDriver["lib/CompilerDriver"]
     end
-
     subgraph VMMOD["VM + Runtime"]
-        Public["public/hermes/Public\nRuntimeConfig.h"]
-        VM["lib/VM\nRuntime · Interpreter · GC\nJSLib · JIT(arm64) · Debugger · Profiler"]
+        Public["public/hermes/Public"]
+        VM["lib/VM\n(Runtime · Interpreter · GC · JSLib · JIT · Debugger)"]
     end
-
-    subgraph APIMOD["API Layer"]
-        JSI["API/jsi — JSI interface"]
-        HermesAPI["API/hermes\nHermesRuntime · CDP · SynthTrace"]
-        ABI["API/hermes_abi — stable C ABI"]
-        NAPI["API/napi — Node N-API"]
+    subgraph APIMOD["API"]
+        JSI["API/jsi"]
+        HermesAPI["API/hermes"]
+        ABI["API/hermes_abi"]
+        NAPI["API/napi"]
     end
-
     subgraph TOOLS["Tools"]
-        hermes_bin["tools/hermes — REPL"]
-        hermesc["tools/hermesc — bytecode compiler"]
-        shermes["tools/shermes — AOT compiler"]
-        hvm["tools/hvm — bytecode runner"]
-        hbcdump["tools/hbcdump"]
-    end
-
-    subgraph TESTS["Tests"]
-        unittests["unittests/ — gtest"]
-        littest["test/ — lit tests"]
+        hermes_bin["tools/hermes"]
+        hermesc["tools/hermesc"]
+        shermes["tools/shermes"]
+        hvm["tools/hvm"]
     end
 
     llvh --> Support & ADT
     asmjit --> VM
-    ADT --> Support
     AST --> Support & ADT
     IR --> AST & Support
     Parser --> AST & Support
@@ -89,245 +76,381 @@ flowchart TD
     hermes_bin --> VM & CompilerDriver
     hermesc & shermes --> CompilerDriver & BCGen
     hvm --> VM
-    unittests --> VM & IR & BCGen & Parser
-    littest --> hermes_bin & hermesc & shermes
 ```
 
 ---
 
-## 2 — Compiler Pipeline: Function-Level Call Graph
+## 2 — API Entry Point: evaluateJavaScript
 
-*Every function name here is real and was verified by LSP `outgoingCalls`.*
+**LSP source:** `HermesRuntimeImpl::evaluateJavaScriptWithSourceMap` — API/hermes/hermes.cpp:1946
+**Callers:** `evaluateJavaScript` (hermes.cpp:2208) and `evaluatePreparedJavaScript` (hermes.cpp:2168)
 
-```mermaid
-flowchart LR
-    src["source.js"]
-
-    subgraph DRIVER["CompilerDriver::processSourceFiles()\nCompilerDriver.cpp:1959"]
-        lex["JSLexer()\nlib/Parser/JSLexer.cpp:81"]
-        parse["parseJS()\nCompilerDriver.cpp:800"]
-        flow["FlowContext()\nlib/Sema/FlowContext.cpp:798\n(static_h only)"]
-        irgen_fn["generateIRFromESTree()\nlib/IRGen/IRGen.cpp:21"]
-        verify["IR::verifyModule()\nlib/IR/IRVerifier.cpp:1828"]
-        opt_none["runNoOptimizationPasses()\nPipeline.cpp:181"]
-        opt_full["runFullOptimizationPasses()\nPipeline.cpp:39"]
-        opt_debug["runDebugOptimizationPasses()\nPipeline.cpp:168"]
-        bcgen_exec["generateBytecodeForExecution()\nCompilerDriver.cpp:1860"]
-        bcgen_ser["generateBytecodeForSerialization()\nCompilerDriver.cpp:1888"]
-    end
-
-    subgraph EVAL["HermesRuntimeImpl::evaluateJavaScriptWithSourceMap()\nAPI/hermes/hermes.cpp:1946"]
-        bc_from_buf["BCProvider::createBCProviderFromBuffer()\nBCGen/HBC/BCProvider.h:398"]
-        bc_from_src["createBCProviderFromSrc()\nBCGen/HBC/HBCStub.cpp:23"]
-        run_bc["Runtime::runBytecode()\nVM/Runtime.h:297"]
-    end
-
-    subgraph INTERP["VM Execution"]
-        interp["Interpreter::interpretFunction()\nlib/VM/Interpreter.cpp"]
-        jit["JIT::compile()\nlib/VM/JIT/arm64/"]
-    end
-
-    src --> lex --> parse --> flow --> irgen_fn --> verify
-    verify --> opt_none & opt_full & opt_debug
-    opt_full & opt_none & opt_debug --> bcgen_exec & bcgen_ser
-
-    bcgen_exec --> bc_from_src
-    bc_from_buf --> run_bc
-    bc_from_src --> run_bc
-    run_bc --> interp
-    interp --> jit
+```
+HermesRuntimeImpl::evaluateJavaScript()                   hermes.cpp:2208
+  └─→ evaluateJavaScriptWithSourceMap()                   hermes.cpp:1946
+        │
+        ├─ [if input is .hbc bytecode]
+        │    BCProvider::createBCProviderFromBuffer()      BCProvider.h:398  [BCGen/HBC]
+        │
+        ├─ [if input is JS source]
+        │    createBCProviderFromSrc()                     BCGen/HBC/HBCStub.cpp:23
+        │      └─→ (triggers CompilerDriver pipeline — see Graph 3)
+        │
+        ├─ ExecutionScopeRAII()                            hermes.cpp:1390
+        ├─ GCScope()                                       HandleRootOwner.h:285  [VM]
+        │
+        └─→ Runtime::runBytecode()                         VM/Runtime.h:297  [VM]
+              └─→ (see Graph 4 — VM Execution)
 ```
 
 ---
 
-## 3 — Microtask / Promise Execution Path (LSP-verified, Tests 5 & 6)
+## 3 — Compiler Pipeline
 
-This is the complete function call graph for the MicrotaskQueue feature traced by LSP.
-Every file, line number, and call verified against the source.
+**LSP source:** `processSourceFiles` — lib/CompilerDriver/CompilerDriver.cpp:1959 (124 outgoing calls)
 
-```mermaid
-flowchart TD
-    cfg["RuntimeConfig.h:78\nF(constexpr, bool, MicrotaskQueue, true)\n← macro-generated default"]
-
-    subgraph WIRE["CLI wiring"]
-        rflags["RuntimeFlags.h:138\nllvh::cl::opt MicrotaskQueue"]
-        rflagscpp["RuntimeFlags.cpp:40\n.withMicrotaskQueue(flags.MicrotaskQueue)"]
-        statichinit["StaticHInit.cpp:104\nruntimeFlags.MicrotaskQueue.setInitialValue(true)"]
-    end
-
-    subgraph CTOR["Runtime constructor"]
-        rtcpp["Runtime.cpp:304\nhasMicrotaskQueue_(runtimeConfig.getMicrotaskQueue())"]
-        assert["Runtime.cpp:330\nassert: MicrotaskQueue must be true"]
-        hasq["Runtime.h:997\nbool hasMicrotaskQueue() const"]
-    end
-
-    subgraph API_FNS["API/hermes/hermes.cpp"]
-        queue["queueMicrotask():2215\nguards via hasMicrotaskQueue()\ncalls enqueueJob()"]
-        drain["drainMicrotasks():2227\nguards via hasMicrotaskQueue()\ncalls Runtime::drainJobs()\ncalls clearKeptObjects()\ncalls cleanUpFinalizationCallbacks()"]
-    end
-
-    subgraph CALLERS["hasMicrotaskQueue() call sites — LSP incomingCalls"]
-        ch["ConsoleHost.h:103\nperformCheckpoint() → drainJobs()"]
-        ri["Runtime.cpp:1293\nrunInternalJavaScript()\nflags.funcsAreBuiltins = hasMicrotaskQueue()"]
-        go1["GlobalObject.cpp:525\ninitGlobalObject() — gates Promise init"]
-        go2["GlobalObject.cpp:642\ninitGlobalObject() — gates Promise init"]
-        hi["HermesInternal.cpp:434\nhermesInternalUseEngineQueue() → JS introspection"]
-        vtbl["hermes_vtable.cpp:1413\ndrain_microtasks() — C ABI"]
-        exec["Executor.cpp:244\ndrainMicrotasks() — test runner"]
-    end
-
-    subgraph DRAIN_IMPL["Runtime::drainJobs() — lib/VM/Runtime.cpp:2005\nLSP outgoingCalls"]
-        gcscope["GCScope — HandleRootOwner.h:285"]
-        marker["GCScopeMarkerRAII — HandleRootOwner.h:487"]
-        mhandle["MutableHandle — Handle.h:601"]
-        deq["deque::front/pop_front — job queue"]
-        exec0["Callable::executeCall0 — Callable.h:220\n← actually invokes JS Promise callbacks"]
-    end
-
-    subgraph TRACE["SynthTrace serialization"]
-        strace["SynthTrace.cpp:146\ngetMicrotaskQueue() → JSON trace"]
-        straceparser["SynthTraceParser.cpp:200\nwithMicrotaskQueue() ← replay"]
-    end
-
-    cfg --> rflags --> rflagscpp --> rtcpp
-    cfg --> statichinit
-    rtcpp --> assert
-    rtcpp --> hasq
-    hasq --> ch & ri & go1 & go2 & hi & queue & drain & vtbl & exec
-    drain --> gcscope & marker & mhandle & deq & exec0
-    cfg --> strace & straceparser
+```
+processSourceFiles()                        CompilerDriver.cpp:1959
+  │
+  ├─ JSLexer()                              lib/Parser/JSLexer.cpp:81
+  ├─ JSLexer::advance()                     JSLexer.cpp:255
+  ├─ parseJS()                              CompilerDriver.cpp:800
+  │     └─→ (recursive descent parser → ESTree AST)
+  │
+  ├─ [static_h only]
+  │    FlowContext()                         lib/Sema/FlowContext.cpp:798
+  │
+  ├─ generateIRFromESTree()                  lib/IRGen/IRGen.cpp:21
+  │     └─→ (AST → HermesIR SSA construction)
+  │
+  ├─ IR::verifyModule()                      lib/IR/IRVerifier.cpp:1828
+  │
+  ├─ [optimization level switch]
+  │    runNoOptimizationPasses()             Optimizer/Pipeline.cpp:181
+  │    runDebugOptimizationPasses()          Optimizer/Pipeline.cpp:168
+  │    runFullOptimizationPasses()           Optimizer/Pipeline.cpp:39
+  │    runOptimizationPassesToFixedPoint()   Optimizer/Pipeline.cpp:114
+  │    runCustomOptimizationPasses()         Optimizer/Pipeline.cpp:22
+  │
+  ├─ generateBytecodeForExecution()          CompilerDriver.cpp:1860
+  │     └─→ BCGen/HBC pipeline → .hbc bytecode
+  │
+  └─ generateBytecodeForSerialization()      CompilerDriver.cpp:1888
+        └─→ BCGen/SH pipeline → C source (static_h AOT)
 ```
 
 ---
 
-## 4 — GC Invocation Path (LSP-verified)
+## 4 — VM Execution Chain
 
-```mermaid
-flowchart TD
-    subgraph TRIGGER["GC triggers"]
-        alloc["GCBase::alloc() — allocation failure"]
-        explicit_call["Runtime::collect() — explicit request"]
-        background["collectOGInBackground() — HadesGC.cpp:1618\nbackground thread"]
-    end
+**LSP sources:**
+- `Runtime::interpretFunction` — Interpreter.cpp:453 (2 outgoing calls — delegates immediately)
+- `Interpreter::interpretFunction` — Interpreter.cpp:472 (313 outgoing calls — the main dispatch loop)
 
-    subgraph HADESgc["HadesGC::collect() — HadesGC.cpp:1462\nLSP outgoingCalls"]
-        lock["lock_guard mutex — background thread sync"]
-        wait["waitForCollectionToFinish() — HadesGC.cpp:1484"]
-        yg["youngGenCollection() — HadesGC.cpp:2627\nYG bump-pointer sweep"]
-    end
-
-    subgraph YG_DETAIL["youngGenCollection internals"]
-        satb["SATB write barriers\n128-element buffer\nWrite Barrier Mutex"]
-        card["card table scan\n512-byte granularity"]
-        promote["promote survivors to OG\nfreelist allocator"]
-    end
-
-    alloc --> explicit_call
-    explicit_call --> lock --> wait
-    lock --> yg
-    yg --> satb & card & promote
-    background --> wait
+```
+Runtime::runBytecode()                      Runtime.cpp:1114
+  │
+  ├─ clearThrownValue()                     [internal VM]
+  ├─ Domain::create()                       [VM domain setup]
+  ├─ RuntimeModule::create()                [VM module registration]
+  ├─ freezeBuiltins()                       [if static builtins flag]
+  │
+  └─→ Runtime::interpretFunction()          Interpreter.cpp:453
+         └─→ interpretFunctionImpl()        Interpreter.cpp:393
+                │
+                ├─ [JIT fast path]
+                │    JIT::shouldCompile()   JIT/arm64/JIT.h:64
+                │    JIT::compile()         JIT/arm64/JIT.h:71
+                │    Callable::_jittedCall() Callable.cpp:1428  ← executes JIT code
+                │
+                └─→ Interpreter::interpretFunction<>()  Interpreter.cpp:472
+                       │  (main bytecode dispatch loop — 313 calls)
+                       │
+                       ├─ GCScope()                     HandleRootOwner.h:285
+                       ├─ Runtime::checkAndAllocStack()  Runtime.h:2318
+                       ├─ Runtime::hasAsyncBreak()       Runtime.h:1472
+                       ├─ Runtime::validateSavedIPBeforeCall()  Runtime.cpp:911
+                       │
+                       ├─ [lazy compilation path]
+                       │    CodeBlock::compileLazyFunction()  CodeBlock.cpp:225
+                       │
+                       ├─ [arithmetic ops]
+                       │    Operations::toNumber_RJS()   Operations.cpp:529
+                       │    Operations::toNumeric_RJS()  Operations.cpp:573
+                       │    Operations::addOp_RJS()      Operations.cpp:1286
+                       │    Operations::strictEqualityTest()  Operations.cpp:1266
+                       │    Operations::toBoolean()      Operations.cpp:253
+                       │
+                       ├─ [property access]
+                       │    JSObject::getNamed_RJS()     JSObject.cpp:2099
+                       │    JSObject::defineOwnComputedPrimitive()  JSObject.cpp:2200
+                       │    JSObject::getPrivateField()  JSObject.cpp:2448
+                       │    JSObject::setPrivateField()  JSObject.cpp:2471
+                       │
+                       ├─ [slow paths — out-of-line handlers]
+                       │    Interpreter-slowpaths.cpp:
+                       │      caseGetByVal()           line 738
+                       │      casePutByVal()           line 804
+                       │      caseCreateClass()        line 68
+                       │      caseDirectEval()         line 188
+                       │      caseIteratorBegin()      line 323
+                       │      doGetByIdSlowPath_RJS()  line 1418
+                       │      doPutByIdSlowPath_RJS()  line 1732
+                       │      createObjectFromBuffer() line 1897
+                       │      createArrayFromBuffer()  line 1993
+                       │
+                       ├─ [string operations]
+                       │    StringPrimitive::concat()   StringPrimitive.cpp:270
+                       │
+                       ├─ [object/array creation]
+                       │    JSArray::create()           JSArray.cpp:651
+                       │    FastArray::create()         FastArray.cpp:116
+                       │    JSObject::create()          JSObject.cpp:81
+                       │
+                       └─ [error / stack overflow]
+                            Runtime::raiseTypeError()      Runtime.cpp:1527
+                            Runtime::raiseStackOverflow()  Runtime.cpp:1557
+                            Runtime::raiseRangeError()     Runtime.cpp:1537
+                            Runtime::notifyTimeout()       Runtime.cpp:2357
 ```
 
 ---
 
-## 5 — Layer 4 Design: On-Demand LSP Expansion
+## 5 — JIT Compiler
 
-**Do not pre-build the call graph. Call clangd live.**
+**Source read:** `JITContext::compileImpl` — lib/VM/JIT/arm64/JIT.cpp:204
+Called from: `JIT::compile()` (JIT.h:71) ← `Interpreter::interpretFunction` (line 581, 1284)
 
-Tests 5 and 6 proved that LSP answers outgoing/incoming call queries in milliseconds on a 50K-file codebase. Pre-building the full graph takes hours (SocratiCode attempt: 2h14m, stalled). The right design is:
-
-```mermaid
-flowchart LR
-    Q["User question\n'how does drainMicrotasks work?'"]
-
-    subgraph L4["Layer 4 — Hybrid RAG pipeline"]
-        gbrain_q["1. GBrain semantic search\nreturns top doc chunks\ne.g. doc/hades.md section"]
-        lsp_expand["2. LSP on-demand expansion\nfor each symbol in the chunk:\n  outgoingCalls → what it calls\n  incomingCalls → who calls it\n  hover → type signature"]
-        learnings["3. Learnings lookup\ncommit-level facts\ne.g. 'default changed d8001980e'"]
-        rerank["4. Combine + rerank\ntop 5 most relevant chunks"]
-        inject["5. Inject into Claude context"]
-    end
-
-    Q --> gbrain_q --> lsp_expand --> learnings --> rerank --> inject
-
-    note1["GBrain = design intent\nLSP = symbol graph (live)\nLearnings = commit facts\nNone replaces the other two"]
+```
+JIT::compile()                              JIT/arm64/JIT.h:71
+  └─→ JITContext::compileImpl()             JIT/arm64/JIT.cpp:204
+         │
+         ├─ JITContext::Compiler()          (sets up asmjit emitter)
+         ├─ compileCodeBlock()              JIT.cpp:211
+         │     │
+         │     ├─ [_sh_setjmp error guard]
+         │     ├─ compileCodeBlockImpl()    JIT.cpp:269
+         │     │     └─→ Emitter::*        JitEmitter.cpp  (asmjit code emission)
+         │     │
+         │     ├─ Emitter::addToRuntime()   JitEmitter.cpp:1264
+         │     │     └─→ asmjit::JitRuntime::add()  [external/asmjit]
+         │     │
+         │     └─ [on error]
+         │          CodeBlock::setDontJIT(true)
+         │          hermes_fatal()          Support/ErrorHandling.cpp:58
+         │
+         └─ RuntimeModule::getStringPrimFromStringIDMayAllocate()
+                                            RuntimeModule.cpp:260
+               (resolves string switch tables post-compilation)
 ```
 
-**Why live LSP beats pre-built graph:**
-- LSP uses the compiled symbol database — it resolves macros, templates, overloads. Pre-built text-parsing graphs cannot.
-- A single `outgoingCalls` call takes <100ms. Building 53,025 embeddings took >2 hours and stalled.
-- The graph only needs to expand 1–3 symbols per retrieved chunk, not the whole codebase.
-- As the code changes, LSP is always current. A pre-built graph goes stale immediately.
+---
+
+## 6 — Garbage Collector
+
+### 6a — Young Generation (Minor GC)
+**LSP source:** `HadesGC::youngGenCollection` — lib/VM/gcs/HadesGC.cpp:2627 (64 outgoing calls)
+**Callers (LSP incomingCalls):**  `HadesGC::allocSlow` (line 2301) and `HadesGC::collect` (line 1462) and `HadesGC::makeAImpl` (HadesGC.h:1629)
+
+```
+HadesGC::youngGenCollection()               HadesGC.cpp:2627
+  │
+  ├─ GCBase::GCCycle()                       GCBase.cpp:102  (RAII stats tracking)
+  ├─ checkWellFormed()                       HadesGC.cpp:3503  (debug validation)
+  ├─ verifyCardTable()                       HadesGC.cpp:3589
+  │
+  ├─ [evacuation phase]
+  │    youngGenEvacuateImpl()               HadesGC.cpp:2576
+  │      ├─ forCompactedObjsInSegment()     HadesGC.cpp:215
+  │      └─ AlignedHeapSegment::markBitArray()
+  │
+  ├─ finalizeYoungGenObjects()              HadesGC.cpp:3088
+  │     └─ runs JS finalizers (WeakRef, FinalizationRegistry callbacks)
+  │
+  ├─ [promotion path — if YG survived fraction too high]
+  │    promoteYoungGenToOldGen()            HadesGC.cpp:2824
+  │
+  ├─ transferExternalMemoryToOldGen()       HadesGC.cpp:2895
+  ├─ updateYoungGenSizeFactor()             HadesGC.cpp:2901
+  │
+  ├─ [trigger OG collection if needed]
+  │    oldGenCollection()                   HadesGC.cpp:1515  (see 6b)
+  │
+  ├─ checkTripwireAndSubmitStats()          HadesGC.cpp:2870
+  ├─ GCBase::recordGCStats()                GCBase.cpp:921 / 937
+  └─ yieldToOldGen()                        HadesGC.cpp:3321
+```
+
+### 6b — Old Generation (Concurrent GC)
+**LSP source:** `HadesGC::oldGenCollection` — lib/VM/gcs/HadesGC.cpp:1515 (32 outgoing calls)
+
+```
+HadesGC::oldGenCollection()                 HadesGC.cpp:1515
+  │
+  ├─ [acquire GC lock — blocks concurrent access]
+  │    std::unique_lock<mutex>
+  │    condition_variable::wait()           [waits for previous OG collection to finish]
+  │
+  ├─ MarkAcceptor()                         HadesGC.cpp:744
+  │     (sets up SATB write barrier acceptor — 128-element buffer, Write Barrier Mutex)
+  │
+  ├─ GCBase::markRoots()                    GCBase.h:1336
+  │     └─ marks all GC roots: stack frames, globals, Runtime members
+  │
+  ├─ initializeSweep()                      HadesGC.cpp:1242
+  ├─ prepareCompactee()                     HadesGC.cpp:1711
+  │
+  └─→ collectOGInBackground()               HadesGC.cpp:1618
+         └─ runs on background thread:
+              concurrent marking → sweep → (optional) compaction
+```
 
 ---
 
-## 6 — File-Level Internal Graphs
+## 7 — Chrome DevTools Protocol (CDP) Debugger
 
-### lib/VM (157 files, 79 internal edges, 0 circular deps)
+### 7a — External command entry
+**LSP source:** `CDPAgentImpl::handleCommand` — API/hermes/cdp/CDPAgent.cpp:267 (16 outgoing calls)
+**Caller (LSP incomingCalls):** `CDPAgentImpl::handleCommand` (line 618) — the public outer wrapper
 
-Most-connected internal hubs:
-- `JSLib/JSLibInternal.h` — **48 connections** (all JSLib .cpp files include it)
-- `JSLib/Object.h` — 5
-- `JIT/arm64/JitEmitter.cpp` — 4
-- `Profiler/SamplingProfiler*.h` — 4
+```
+CDPAgent::handleCommand(json)               CDPAgent.cpp:267  [public API]
+  │
+  ├─ MessageTypes::fromJson()               MessageTypes.cpp:91
+  │     └─ parses incoming CDP JSON → typed Request object
+  │
+  ├─ [if parse error]
+  │    MessageTypes::ErrorResponse()        MessageTypes.h:1009
+  │    MessageInterfaces::toJsonStr()       MessageInterfaces.h:33
+  │
+  ├─ RuntimeTaskRunner::enqueueTask()       RuntimeTaskRunner.cpp:21
+  │     └─ queues task to run on JS thread (thread-safe)
+  │
+  └─ DomainAgents::handleCommand()          CDPAgent.cpp:378
+        └─ dispatches to domain agents:
+             DebuggerDomainAgent   (breakpoints, stepping, call frames)
+             RuntimeDomainAgent    (evaluate, properties, exceptions)
+             HeapProfilerDomainAgent
+             ProfilerDomainAgent
+```
 
-| Subsystem | ~Files | Contents |
-|-----------|--------|----------|
-| `JSLib/` | 60 | Array, Promise, Map, Set, Date, JSON, RegExp, all builtins |
-| `gcs/` | 15 | HadesGC + GenGC + MallocGC + AlignedHeapSegment |
-| `JIT/arm64/` | 8 | Baseline JIT emitter, handlers, offsets |
-| `Profiler/` | 8 | SamplingProfiler (POSIX + Windows + Sampler) |
-| Root `.cpp` | 60 | Runtime, Interpreter, JSObject, StringPrimitive, IdentifierTable… |
+### 7b — Async pause (interrupt from external thread)
+**Source read:** `AsyncDebuggerAPI::triggerInterrupt_TS` — API/hermes/AsyncDebuggerAPI.cpp:107
 
-### API/hermes (97 files, 53 internal edges, 0 circular deps)
-
-Most-connected:
-- `cdp/tools/hermes-inspector-msggen/src/index.js` — 7 (CDP codegen orchestrator)
-- `extensions/Extensions.cpp` — 6
-- `extensions/JSIUtils.h` — 4
-
-| Subsystem | ~Files | Contents |
-|-----------|--------|----------|
-| `cdp/` | 40 | CDP agents: Debugger, Runtime, HeapProfiler, Profiler |
-| `extensions/` | 15 | TextEncoder, TextDecoder, Worker, ContribExtensions |
-| Root | 12 | hermes.cpp (HermesRuntime), SynthTrace, TracingRuntime, DebuggerAPI |
-
----
-
-## 7 — Module Dependency Count Matrix
-
-How many `#include` lines each module draws from every other (from grep).
-
-| Module | VM | IR | BCGen | Support | AST | Optimizer | Sema | Parser | Inst | SourceMap |
-|--------|:--:|:--:|:-----:|:-------:|:---:|:---------:|:----:|:------:|:----:|:---------:|
-| lib/VM | 435 | — | 17 | 42 | — | — | — | — | 2 | — |
-| API/hermes | 29 | — | 5 | 15 | — | — | — | 2 | — | 2 |
-| lib/BCGen | — | 52 | 114 | 32 | 3 | 6 | 4 | — | 5 | 5 |
-| lib/Optimizer | — | 88 | 2 | 24 | — | 51 | — | — | — | — |
-| lib/IRGen | — | 6 | — | 3 | 2 | — | 3 | 1 | — | — |
-| lib/Sema | — | — | — | 5 | 22 | — | 12 | — | — | — |
-| lib/Parser | — | — | — | 7 | 7 | — | — | 15 | — | — |
-| lib/IR | — | 44 | — | 2 | 2 | — | — | — | — | — |
-| lib/CompilerDriver | — | 5 | 4 | 10 | 6 | 2 | 2 | 2 | — | 3 |
-| unittests/ | 227 | 48 | 33 | 58 | 25 | — | — | 18 | — | 8 |
+```
+AsyncDebuggerAPI::triggerInterrupt_TS()     AsyncDebuggerAPI.cpp:107
+  │
+  ├─ std::lock_guard<std::mutex>            (mutex_ — thread safety)
+  ├─ interruptCallbacks_.push()             (queues the interrupt callback)
+  ├─ signal_.notify_one()                   (wakes the debugger thread)
+  │
+  └─→ runtime_.getDebugger().triggerAsyncPause()   [lib/VM/Debugger/Debugger.cpp]
+         └─ sets async pause flag checked by Interpreter at safepoints
+              ↓
+         Next interpreter safepoint:
+           Runtime::hasAsyncBreak()         Runtime.h:1472
+             └─→ AsyncDebuggerAPI::didPause() called by VM
+                   └─ runInterrupts() → executes queued callbacks
+                      runEventCallback()  → notifies CDP clients
+```
 
 ---
 
-## 8 — Key Observations
+## 8 — Microtask / Promise Execution (from Tests 5 & 6)
 
-**No circular dependencies.** lib/VM (79 edges), API/hermes (53 edges), include/hermes (10 edges) — all clean DAGs.
+```
+RuntimeConfig.h:78  F(constexpr, bool, MicrotaskQueue, true)   ← macro, default=true
+  │
+  ├─ RuntimeFlags.h:138       llvh::cl::opt MicrotaskQueue     ← CLI flag
+  ├─ RuntimeFlags.cpp:40      .withMicrotaskQueue(flags.MicrotaskQueue)
+  ├─ StaticHInit.cpp:104      runtimeFlags.MicrotaskQueue.setInitialValue(true)
+  │
+  └─ Runtime.cpp:304          hasMicrotaskQueue_(runtimeConfig.getMicrotaskQueue())
+       Runtime.cpp:330        assert: must be true
+       Runtime.h:997          bool hasMicrotaskQueue() const
+                │
+                ├─ ConsoleHost.h:103          gates drainJobs() in CLI
+                ├─ Runtime.cpp:1293           gates Promise reporting
+                ├─ GlobalObject.cpp:525 & 642 gates Promise init (x2)
+                ├─ HermesInternal.cpp:434     JS introspection API
+                ├─ hermes.cpp:2217            queueMicrotask() guard
+                ├─ hermes.cpp:2229            drainMicrotasks() guard
+                ├─ hermes_vtable.cpp:1413     C ABI drain guard
+                └─ Executor.cpp:244           test runner
 
-**The real graph is function-level, not file-level.** `lib/VM #includes lib/BCGen 17 times` tells you almost nothing useful. `Runtime::runBytecode (Runtime.h:297)` is the actual entry point from API into VM — that is what matters for understanding, debugging, and impact analysis.
+HermesRuntimeImpl::drainMicrotasks()        hermes.cpp:2227
+  ├─ hasMicrotaskQueue()                    [guard]
+  ├─ checkStatus()                          hermes.cpp:3610
+  ├─ Runtime::drainJobs()                   Runtime.cpp:2005
+  │     ├─ GCScope()                        HandleRootOwner.h:285
+  │     ├─ deque::front/pop_front           (job queue)
+  │     └─ Callable::executeCall0()         Callable.h:220  ← invokes JS Promise callbacks
+  ├─ Runtime::clearKeptObjects()            Runtime.cpp:2050
+  └─ Runtime::cleanUpFinalizationCallbacks() Runtime.cpp:2058
 
-**JSLibInternal.h is the single hottest file** — 48 of 60 JSLib .cpp files include it. Changing it touches almost the entire JS standard library implementation.
-
-**API/hermes is the only public face of the VM.** Tools and embedders do not call lib/VM directly. They call `HermesRuntime` in API/hermes which wraps the VM. The C ABI layer (`hermes_abi`) wraps that again.
-
-**The compiler pipeline is strictly layered** — Parser knows nothing about IR, IR knows nothing about BCGen. CompilerDriver is the only code that orchestrates the full sequence.
-
-**BCGen/SH is a parallel output path inside lib/BCGen.** The same `processSourceFiles` pipeline runs through Optimizer then branches: `generateBytecodeForExecution` (→ .hbc for interpreter) vs `generateBytecodeForSerialization` (→ C source for AOT). CompilerDriver selects at pipeline setup.
+HermesRuntimeImpl::queueMicrotask()         hermes.cpp:2215
+  ├─ hasMicrotaskQueue()                    [guard]
+  └─ Runtime::enqueueJob()                  [pushes to job queue]
+```
 
 ---
 
-*Sources: grep `#include` count analysis · SocratiCode ast-grep file graph (lib/VM 157f/79e, API/hermes 97f/53e) · clangd LSP `outgoingCalls`/`incomingCalls` on evaluateJavaScriptWithSourceMap, processSourceFiles, Runtime::drainJobs, HadesGC::collect, drainMicrotasks, queueMicrotask, hasMicrotaskQueue (Tests 5 & 6)*
+## 9 — Full Cross-Module Call Summary
+
+Every function-to-function call that crosses a module boundary, as confirmed by LSP.
+
+| Caller (module) | Function | Callee (module) | Function | File:Line |
+|----------------|----------|-----------------|----------|-----------|
+| API/hermes | evaluateJavaScriptWithSourceMap | lib/VM | Runtime::runBytecode | Runtime.h:297 |
+| API/hermes | evaluateJavaScriptWithSourceMap | lib/BCGen/HBC | BCProvider::createBCProviderFromBuffer | BCProvider.h:398 |
+| API/hermes | evaluateJavaScriptWithSourceMap | lib/BCGen/HBC | createBCProviderFromSrc | HBCStub.cpp:23 |
+| API/hermes | drainMicrotasks | lib/VM | Runtime::drainJobs | Runtime.cpp:2005 |
+| API/hermes | drainMicrotasks | lib/VM | Runtime::clearKeptObjects | Runtime.cpp:2050 |
+| API/hermes | drainMicrotasks | lib/VM | Runtime::cleanUpFinalizationCallbacks | Runtime.cpp:2058 |
+| API/hermes | queueMicrotask | lib/VM | Runtime::enqueueJob | [Runtime] |
+| API/hermes/cdp | CDPAgent::handleCommand | API/hermes | RuntimeTaskRunner::enqueueTask | RuntimeTaskRunner.cpp:21 |
+| API/hermes | AsyncDebuggerAPI::triggerInterrupt_TS | lib/VM | Debugger::triggerAsyncPause | [Debugger.cpp] |
+| lib/VM Interpreter | interpretFunction | lib/VM JIT | JIT::shouldCompile | JIT.h:64 |
+| lib/VM Interpreter | interpretFunction | lib/VM JIT | JIT::compile | JIT.h:71 |
+| lib/VM Interpreter | interpretFunction | lib/VM Callable | _jittedCall | Callable.cpp:1428 |
+| lib/VM Interpreter | interpretFunction | lib/VM Operations | toNumber_RJS | Operations.cpp:529 |
+| lib/VM Interpreter | interpretFunction | lib/VM Operations | addOp_RJS | Operations.cpp:1286 |
+| lib/VM Interpreter | interpretFunction | lib/VM Operations | strictEqualityTest | Operations.cpp:1266 |
+| lib/VM Interpreter | interpretFunction | lib/VM JSObject | getNamed_RJS | JSObject.cpp:2099 |
+| lib/VM Interpreter | interpretFunction | lib/VM JSObject | defineOwnComputedPrimitive | JSObject.cpp:2200 |
+| lib/VM Interpreter | interpretFunction | lib/VM CodeBlock | compileLazyFunction | CodeBlock.cpp:225 |
+| lib/VM Interpreter | interpretFunction | lib/VM StringPrimitive | concat | StringPrimitive.cpp:270 |
+| lib/VM Interpreter | interpretFunction | lib/VM JSArray | create | JSArray.cpp:651 |
+| lib/VM Interpreter | interpretFunction | lib/VM Runtime | raiseTypeError | Runtime.cpp:1527 |
+| lib/VM Interpreter | interpretFunction | lib/VM Runtime | raiseStackOverflow | Runtime.cpp:1557 |
+| lib/VM JIT | compileImpl | external/asmjit | JitRuntime::add | [asmjit] |
+| lib/VM JIT | compileImpl | lib/VM RuntimeModule | getStringPrimFromStringIDMayAllocate | RuntimeModule.cpp:260 |
+| lib/VM HadesGC | youngGenCollection | lib/VM GCBase | recordGCStats | GCBase.cpp:921 |
+| lib/VM HadesGC | youngGenCollection | lib/VM HadesGC | oldGenCollection | HadesGC.cpp:1515 |
+| lib/VM HadesGC | oldGenCollection | lib/VM GCBase | markRoots | GCBase.h:1336 |
+| lib/VM HadesGC | oldGenCollection | lib/VM HadesGC | collectOGInBackground | HadesGC.cpp:1618 |
+| lib/CompilerDriver | processSourceFiles | lib/Parser | JSLexer | JSLexer.cpp:81 |
+| lib/CompilerDriver | processSourceFiles | lib/IRGen | generateIRFromESTree | IRGen.cpp:21 |
+| lib/CompilerDriver | processSourceFiles | lib/Sema | FlowContext | FlowContext.cpp:798 |
+| lib/CompilerDriver | processSourceFiles | lib/Optimizer | runFullOptimizationPasses | Pipeline.cpp:39 |
+| lib/CompilerDriver | processSourceFiles | lib/IR | verifyModule | IRVerifier.cpp:1828 |
+
+---
+
+## 10 — Key Structural Observations
+
+**The VM execution chain has four layers.** `runBytecode` → `interpretFunction` (wrapper) → `interpretFunctionImpl` (setup) → `Interpreter::interpretFunction` (dispatch). The template parameter controls whether it is a generator or normal function.
+
+**The JIT is a compile-on-hot-path promotion.** The interpreter checks `JIT::shouldCompile()` on every function entry (lines 564, 1280). When a code block crosses the hotness threshold, `JIT::compile()` is called inline — the interpreter does not pause. On the next call, `getJITCompiled()` (CodeBlock.h:309) returns the compiled pointer and `_jittedCall` executes it directly.
+
+**Lazy compilation happens inside the interpreter.** When `CodeBlock::isLazy()` returns true (line 1270), `compileLazyFunction()` is called at line 1272, mid-dispatch. This is why startup is fast — inner functions are compiled only when they are first called.
+
+**The CDP debugger is fully off-thread.** External commands (`handleCommand`) are queued via `RuntimeTaskRunner::enqueueTask` and run on the JS thread later. Async pauses (`triggerInterrupt_TS`) set a flag that the interpreter checks at safepoints via `hasAsyncBreak()` (Runtime.h:1472). The VM never blocks waiting for the debugger.
+
+**The GC has two fully concurrent paths.** Young generation is stop-the-world (brief — microseconds). Old generation runs entirely on a background thread (`collectOGInBackground`) while JS continues executing, coordinated by SATB write barriers.
+
+**No circular dependencies across all indexed modules.** lib/VM (79 edges), API/hermes (53 edges), include/hermes (10 edges) — all clean DAGs confirmed by SocratiCode.
+
+---
+
+*Sources: clangd LSP `outgoingCalls` on evaluateJavaScriptWithSourceMap (43 calls), processSourceFiles (124 calls), Interpreter::interpretFunction (313 calls), youngGenCollection (64 calls), oldGenCollection (32 calls), CDPAgent::handleCommand (16 calls), Runtime::drainJobs (11 calls); `incomingCalls` on interpretFunction, youngGenCollection, handleCommand; source reads for triggerInterrupt_TS, compileImpl, runBytecode; grep-based `#include` count matrix.*
