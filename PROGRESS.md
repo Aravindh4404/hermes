@@ -8,7 +8,7 @@
 | 2 — Knowledge Graph | gbrain (PGLite) | DONE | 6a77fa618 |
 | 3 — Hierarchical Summaries | LLM Wiki + gbrain | DONE | 6a77fa618 |
 | 4 — Hybrid RAG | Custom Python | PENDING | — |
-| 5 — Agent Memory | /learn + gbrain | IN PROGRESS | see below |
+| 5 — Agent Memory | /learn + gbrain | DONE | 06173ddcd |
 
 ---
 
@@ -278,7 +278,7 @@ Query → Vector search (pgvector) → top 20 chunks
 **Date**: 2026-05-28  
 **Tool**: /learn (gstack-learnings-log at `~/.gstack/projects/facebook-hermes/learnings.jsonl`)
 
-### What's saved (15 learnings)
+### What's saved (22 entries → 18 unique learnings after dedup)
 
 **Pitfalls (4)**
 - `claude-md-size-bloat` — CLAUDE.md auto-gen includes 75KB folder listing; keep under 10KB
@@ -302,8 +302,17 @@ Query → Vector search (pgvector) → top 20 chunks
 - `hermes-test-structure` — lit tests in test/, gtest in unittests/, shermes in test/shermes/
 - `shermes-flow-types-required` — untyped JS works but falls back to dynamic dispatch
 
-**Operational (1)**
+**Operational (2)**
 - `windows-detect-false-negative` — gstack detect reports no-cli on Windows; use gbrain CLI directly
+- `windows-gbrain-workarounds` — 3 Windows gbrain issues: false-negative detect, `/dev/stdin` missing for capability check, bun PATH fix
+
+**Context system (5)** — added 2026-06-05
+- `context-system-5-layer-stack` — L1=CLAUDE.md(10KB), L2=gbrain(68 pages), L3=wiki(11 articles), L4=RAG(pending), L5=learnings
+- `hermes-parser-three-phases` — PreParse/LazyParse/FullParse enum; JSLexer::advance at JSLexer.cpp:255
+- `hermes-optimizer-pass-count` — 45 passes in 5 phases; DCE+Mem2Reg after every major transform; TypeInference runs 3x
+- `three-tool-context-split` — gbrain=docs, LSP=symbols, learnings=commit-facts; zero overlap
+- `lsp-vs-grep-call-graph` — LSP 2 calls vs grep 6-12 steps for same call graph; proven on drainMicrotasks
+- `context-system-query-routing` — keyword gbrain: 7/10 docs, 0/10 identifiers; LSP: 10/10 symbols; learnings: 9/10 commits
 
 ### Sessions run so far (gstack skills)
 - /document-generate → Layer 1 docs
